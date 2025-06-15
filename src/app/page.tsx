@@ -1,23 +1,76 @@
-"use client";
+'use client';
+import { useEffect, useState } from 'react';
+import { useAccount, useDisconnect } from 'wagmi';
+import { useRouter } from 'next/navigation';
 import { ConnectWalletButton } from "@/components/simplekit";
-import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "./theme-toggle";
+import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 import Image from "next/image";
-import { useEffect } from 'react';
-import { useAccount } from 'wagmi';
-import { useRouter } from 'next/navigation';
 
 export default function Home() {
-  const { isConnected } = useAccount();
+  const [isResetting, setIsResetting] = useState(true);
+  const { isConnected, address } = useAccount();
+  const { disconnect } = useDisconnect();
   const router = useRouter();
 
+  // Handle wallet disconnection on mount
   useEffect(() => {
-    if (isConnected) {
+    // Only run this in the browser
+    if (typeof window === 'undefined') return;
+
+    // Check if we've already processed the disconnection
+    if (sessionStorage.getItem('walletDisconnected')) {
+      sessionStorage.removeItem('walletDisconnected');
+      return;
+    }
+
+    // Mark that we're processing disconnection
+    sessionStorage.setItem('walletDisconnected', 'true');
+
+    const disconnectWallet = async () => {
+      try {
+        console.log('Disconnecting wallet...');
+        await disconnect();
+        
+        // Clear wagmi-related localStorage keys
+        const wagmiKeys = Object.keys(localStorage).filter(key => key.startsWith('wagmi'));
+        wagmiKeys.forEach(key => localStorage.removeItem(key));
+        
+        // Clear common wallet connection keys
+        ['walletconnect', 'WEB3_CONNECT_CACHED_PROVIDER'].forEach(key => {
+          localStorage.removeItem(key);
+        });
+        
+        console.log('Wallet disconnected successfully');
+      } catch (error) {
+        console.error('Error disconnecting wallet:', error);
+      } finally {
+        // Remove the flag after a short delay to allow the disconnection to complete
+        setTimeout(() => {
+          sessionStorage.removeItem('walletDisconnected');
+          setIsResetting(false);
+        }, 1000);
+      }
+    };
+
+    disconnectWallet();
+    
+    // Cleanup function
+    return () => {
+      // Cleanup if component unmounts
+      sessionStorage.removeItem('walletDisconnected');
+    };
+  }, []);
+  
+  // Handle redirection if connected
+  useEffect(() => {
+    if (isConnected && !isResetting) {
+      console.log('Wallet connected, redirecting to /upload');
       router.push('/upload');
     }
-  }, [isConnected, router]);
+  }, [isConnected, isResetting, router]);
 
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center p-3.5">
@@ -34,9 +87,9 @@ export default function Home() {
           <ThemeToggle />
           <ConnectWalletButton />
           <Link href="https://github.com/vaunblu/SimpleKit" target="_blank">
-            <Button variant="ghost" className="rounded-xl">
+            {/* <Button variant="ghost" className="rounded-xl">
               GitHub &rarr;
-            </Button>
+            </Button> */}
           </Link>
         </div>
       </main>
