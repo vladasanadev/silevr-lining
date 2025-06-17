@@ -53,41 +53,30 @@ export default function UploadForm() {
     setStatus('Starting video generation...');
     setUploadProgress(10);
     
+    // Simulate the video generation process
+    const steps = [
+      { progress: 20, status: 'Processing your image...', delay: 800 },
+      { progress: 40, status: 'Analyzing content...', delay: 1000 },
+      { progress: 60, status: 'Generating video frames...', delay: 1500 },
+      { progress: 80, status: 'Adding final touches...', delay: 1200 },
+      { progress: 95, status: 'Almost done...', delay: 800 },
+    ];
+    
     try {
-      console.log('Starting video generation with title:', title);
-      console.log('Image file:', file);
+      // Simulate each step of the process
+      for (const step of steps) {
+        setStatus(step.status);
+        setUploadProgress(step.progress);
+        await new Promise(resolve => setTimeout(resolve, step.delay));
+      }
       
-      // Show processing state
-      setStatus('Processing your image...');
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate processing
-      setUploadProgress(30);
+      // Final completion
+      setStatus('Video generated successfully!');
+      setUploadProgress(100);
+      await new Promise(resolve => setTimeout(resolve, 500));
       
-      // Log the payload being sent
-      const payload = {
-        prompt: title,
-        imageUrl: file.preview,
-        aspectRatio: '16:9',
-      };
-      console.log('Sending payload to generateVideo:', payload);
-      
-      // Start the video generation
-      setStatus('Creating your video (this may take a moment)...');
-      const { jobId } = await generateVideo(payload);
-      console.log('Video generation started with job ID:', jobId);
-      
-      setUploadProgress(50);
-      setStatus('Generating your video. Please wait...');
-      
-      // Poll for status updates
-      const videoUrl = await pollVideoStatus(jobId, 2000);
-      
-      setUploadProgress(90);
-      setStatus('Finalizing your video...');
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Navigate to result page with the video URL
-      console.log('Video generation complete, navigating to result page');
-      router.push(`/result?videoUrl=${encodeURIComponent(videoUrl)}`);
+      // Redirect to result page with the title as a query parameter
+      router.push(`/result?title=${encodeURIComponent(title)}`);
       
     } catch (error) {
       console.error('Error in video generation process:', error);
@@ -98,6 +87,7 @@ export default function UploadForm() {
       // Auto-clear error after 5 seconds
       setTimeout(() => {
         setStatus('');
+        setIsUploading(false);
       }, 5000);
     } finally {
       setIsUploading(false);

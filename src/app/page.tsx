@@ -85,7 +85,16 @@ export default function Home() {
         </div>
         <div className="flex items-center gap-3.5">
           <ThemeToggle />
-          <ConnectWalletButton />
+          <div className="flex items-center gap-3.5">
+            <ConnectWalletButton />
+            <Button 
+              variant="outline" 
+              className="rounded-xl border-2 border-blue-600 text-blue-600 hover:bg-blue-600/10 hover:text-blue-600 transition-colors px-6 h-11 text-base font-medium"
+              onClick={() => {}}
+            >
+              Verify Identity
+            </Button>
+          </div>
           <Link href="https://github.com/vaunblu/SimpleKit" target="_blank">
             {/* <Button variant="ghost" className="rounded-xl">
               GitHub &rarr;
