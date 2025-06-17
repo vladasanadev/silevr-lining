@@ -3,10 +3,11 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { useAccount, useSignMessage } from 'wagmi';
-import { addSignatureToVideo } from '@/lib/videoMetadata';
+import { createPublicClient, http } from 'viem';
+import { useAccount, usePublicClient, useWalletClient } from 'wagmi';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { signVideo, isVideoSigned, getVideoSignature } from '@/lib/contract';
 
 interface VideoState {
   url: string | null;
@@ -28,32 +29,60 @@ export default function ResultPage() {
   });
   
   const [isSigning, setIsSigning] = useState(false);
-  const [videoHash, setVideoHash] = useState('0x' + Math.random().toString(16).substring(2, 66));
+  const [isCheckingSignature, setIsCheckingSignature] = useState(false);
+  const [isSigned, setIsSigned] = useState(false);
+  const [txHash, setTxHash] = useState<string | null>(null);
+  const [signatureData, setSignatureData] = useState<any>(null);
+  const videoHash = '0x' + Math.random().toString(16).substring(2, 66);
+  
   const { isConnected, address } = useAccount();
+  const publicClient = usePublicClient();
+  const { data: walletClient } = useWalletClient();
   const router = useRouter();
+  
+  // Check if video is already signed on mount
+  useEffect(() => {
+    const checkSignature = async () => {
+      if (isConnected && videoHash && publicClient) {
+        try {
+          setIsCheckingSignature(true);
+          const signed = await isVideoSigned(publicClient, videoHash);
+          setIsSigned(signed);
+          
+          if (signed) {
+            const sigData = await getVideoSignature(publicClient, videoHash);
+            setSignatureData(sigData);
+          }
+        } catch (error) {
+          console.error('Error checking signature:', error);
+          setVideoState(prev => ({ ...prev, error: 'Failed to check video signature' }));
+        } finally {
+          setIsCheckingSignature(false);
+        }
+      }
+    };
+    
+    checkSignature();
+  }, [isConnected, videoHash, publicClient]);
 
   // Handle the sign message button click
   const handleSignMessage = async () => {
-    console.log('handleSignMessage called');
+    if (!isConnected || !walletClient) {
+      alert('Please connect your wallet first');
+      return;
+    }
+    
+    if (!videoState.url) {
+      alert('No video available to sign');
+      return;
+    }
+    
+    if (isSigned) {
+      alert('This video has already been signed');
+      return;
+    }
+    
     try {
-      console.log('Checking wallet connection...');
-      if (!isConnected) {
-        console.log('Wallet not connected, showing alert');
-        alert('Please connect your wallet first');
-        return;
-      }
-      
-      console.log('Checking video URL...');
-      if (!videoState.url) {
-        console.error('No video URL available');
-        alert('No video available to sign');
-        return;
-      }
-      
-      console.log('Starting signing process...');
-      console.log('Video URL:', videoState.url);
-      console.log('Connected address:', address);
-      
       setIsSigning(true);
       setVideoState(prev => ({
         ...prev,
@@ -61,22 +90,49 @@ export default function ResultPage() {
         error: null
       }));
       
-      // Create a message to sign
-      const message = `I verify this video content as positive and authentic.\n\n` +
-                     `Video: ${videoState.url}\n` +
-                     `Timestamp: ${new Date().toISOString()}`;
+      // In a real app, you would sign an actual message hash
+      // This is just a placeholder for demonstration
+      const signature = await walletClient.signMessage({
+        account: address!,
+        message: `Signing video: ${videoHash}`,
+      });
       
-      // Sign the message
-      await signMessage({ message });
+      // Send the signature to the contract using the wallet client
+      const tx = await signVideo(walletClient, videoHash, signature);
+      setTxHash(tx);
+      console.log('Transaction hash:', tx);
       
-      // The rest of the signing process will be handled by the useSignMessage onSuccess callback
-    } catch (error) {
-      console.error('Error initiating signing:', error);
+      // Wait for the transaction to be mined (optional)
+      const publicClient = createPublicClient({
+        chain: walletClient.chain,
+        transport: http()
+      });
+      const receipt = await publicClient.waitForTransactionReceipt({
+        hash: tx,
+        confirmations: 1
+      });
+      console.log('Transaction mined in block:', receipt.blockNumber);
+      
+      // Update UI
+      setIsSigned(true);
+      const sigData = await getVideoSignature(publicClient, videoHash);
+      setSignatureData(sigData);
+      
       setVideoState(prev => ({
         ...prev,
-        error: error instanceof Error ? error.message : 'Failed to initiate signing',
         loading: false
       }));
+      
+    } catch (error) {
+      console.error('Error signing video:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to sign video';
+      setVideoState(prev => ({
+        ...prev,
+        error: errorMessage,
+        loading: false
+      }));
+      alert(`Error: ${errorMessage}`);
+    } finally {
       setIsSigning(false);
     }
   };
@@ -103,287 +159,141 @@ export default function ResultPage() {
     }
   }, [videoUrl]);
 
-  // Handle the actual signing of the message
-  const { signMessage } = useSignMessage({
-    mutation: {
-      onSuccess: async (signature: `0x${string}`) => {
-        console.log('Signature received from wallet:', signature);
-        
-        try {
-          // Ensure we have a valid video URL
-          if (!videoState.url) {
-            const errorMsg = 'No video URL available';
-            console.error(errorMsg);
-            throw new Error(errorMsg);
-          }
-          
-          try {
-            console.log('Fetching video from URL:', videoState.url);
-            const response = await fetch(videoState.url);
-            if (!response.ok) {
-
-              throw new Error(`Failed to fetch video: ${response.status} ${response.statusText}`);
-            }
-            
-            const blob = await response.blob();
-            console.log('Video blob size:', blob.size, 'bytes');
-            const file = new File([blob], 'video.mp4', { type: 'video/mp4' });
-
-            // Prepare metadata
-            const metadata = {
-              signerAddress: address,
-              timestamp: new Date().toISOString(),
-              title: 'Silver Lining Video',
-              description: 'A video with verified positive content'
-            };
-            console.log('Prepared metadata:', metadata);
-
-            // Create form data
-            const formData = new FormData();
-            formData.append('file', file);
-            formData.append('signature', signature);
-            formData.append('metadata', JSON.stringify(metadata));
-
-            console.log('Sending request to /api/process-video...');
-            const startTime = Date.now();
-            
-            // Call our API
-            const apiResponse = await fetch('/api/process-video', {
-              method: 'POST',
-              body: formData,
-            });
-
-            const endTime = Date.now();
-            console.log(`API response received in ${endTime - startTime}ms. Status:`, apiResponse.status);
-
-            if (!apiResponse.ok) {
-              let errorData;
-              try {
-                errorData = await apiResponse.json();
-                console.error('API error details:', errorData);
-              } catch (e) {
-                console.error('Failed to parse error response:', e);
-                errorData = { error: 'Unknown error' };
-              }
-              throw new Error(errorData.error || `API request failed with status ${apiResponse.status}`);
-            }
-
-            console.log('Processing video response...');
-            const videoBlob = await apiResponse.blob();
-            console.log('Received processed video blob size:', videoBlob.size, 'bytes');
-            
-            const videoUrl = URL.createObjectURL(videoBlob);
-            console.log('Created object URL for processed video');
-
-            // Update the video source and state
-            setVideoState(prev => ({
-              ...prev,
-              url: videoUrl,
-              loading: false,
-              error: null
-            }));
-            
-            // Update the hash to show the signature
-            setVideoHash(signature);
-            
-            console.log('Video successfully processed and updated');
-            alert('Video signed successfully!');
-          } catch (error: unknown) {
-            const errorMessage = error instanceof Error ? error.message : 'Failed to process video';
-            console.error('Error processing video:', error);
-            if (error instanceof Error) {
-              console.error('Error stack:', error.stack);
-            }
-            throw new Error(`Failed to process video: ${errorMessage}`);
-          }
-        } catch (error) {
-          console.error('Error in video signing process:', error);
-          setVideoState(prev => ({
-            ...prev,
-            error: (error as Error).message,
-            loading: false
-          }));
-          alert('Error processing video: ' + (error as Error).message);
-        } finally {
-          console.log('Signing process completed');
-          setIsSigning(false);
-        }
-      },
-      onError: (error: unknown) => {
-        console.error('Wallet signing error:', error);
-        if (error instanceof Error) {
-          console.error('Error details:', {
-            name: error.name,
-            message: error.message,
-            stack: error.stack
-          });
-        }
-        setVideoState(prev => ({
-          ...prev,
-          error: (error as Error).message,
-          loading: false
-        }));
-        alert('Error signing video: ' + (error as Error).message);
-        setIsSigning(false);
-      }
-    }
-  });
-
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center p-3.5 bg-background">
-      <main className="flex flex-col items-center gap-y-9 w-full max-w-4xl mx-auto p-4">
-        <div className="w-full text-center">
-          <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-gray-900 dark:text-white mb-4">
-            Your Silver Lining
-          </h1>
-          <p className="text-lg md:text-xl text-muted-foreground">
-            Mathematically verified positive content
-          </p>
-        </div>
+    <div className="min-h-screen bg-black text-white p-4 md:p-8">
+      <div className="max-w-4xl mx-auto">
+        <header className="mb-8">
+          <h1 className="text-3xl font-bold mb-2">Your Generated Video</h1>
+          <p className="text-gray-400">Your video has been successfully generated and is ready to view.</p>
+        </header>
 
-        {/* Video Player */}
-        <div className="relative w-full max-w-4xl aspect-video rounded-xl overflow-hidden bg-black shadow-xl">
-          {videoState.url ? (
-            <video 
-              src={videoState.url} 
-              controls 
-              autoPlay
-              className="w-full h-full object-contain"
-              onError={(e) => {
-                console.error('Error loading video:', e);
-                setVideoState(prev => ({
-                  ...prev,
-                  error: 'Failed to load video. Please check the URL and try again.',
-                  loading: false
-                }));
-              }}
-              onLoadedData={() => {
-                setVideoState(prev => ({
-                  ...prev,
-                  loading: false,
-                  error: null
-                }));
-              }}
-            >
-              Your browser does not support the video tag.
-            </video>
-          ) : (
-            <div className="w-full h-full flex items-center justify-center bg-gray-100 dark:bg-gray-800">
-              {videoState.loading ? (
-                <div className="text-center">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-2"></div>
-                  <p>Loading video...</p>
-                </div>
-              ) : videoState.error ? (
-                <div className="text-center p-6">
-                  <p className="text-red-500 mb-4">{videoState.error}</p>
-                  <Link href="/upload" className="text-blue-500 hover:underline">
-                    Go back to upload
-                  </Link>
-                </div>
-              ) : (
+        <div className="bg-gray-900 rounded-xl p-6 mb-8">
+          <div className="aspect-video bg-black rounded-lg overflow-hidden mb-6">
+            {videoState.url ? (
+              <video 
+                src={videoState.url} 
+                controls 
+                className="w-full h-full object-contain"
+                onError={(e) => {
+                  console.error('Error loading video:', e);
+                  setVideoState(prev => ({ ...prev, error: 'Failed to load video' }));
+                }}
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center bg-gray-800">
                 <p className="text-gray-500">No video available</p>
-              )}
-            </div>
-          )}
-        </div>
-
-        {videoState.url && !videoState.error && (
-          <>
-            {/* Verification Badges */}
-            <div className="flex flex-wrap gap-3 justify-center">
-              <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-green-500/10 text-green-500 text-sm">
-                <span>✓</span>
-                <span>EigenLayer Verified</span>
               </div>
-              <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-yellow-500/10 text-yellow-500 text-sm">
-                <span>🔒</span>
-                <span>Permanently Stored</span>
+            )}
+          </div>
+          {/* Signature Status */}
+          <div className="mb-6 p-4 rounded-lg bg-gray-800/50 border border-gray-700">
+            <h3 className="text-lg font-medium mb-3">Blockchain Verification</h3>
+            
+            {isCheckingSignature ? (
+              <div className="flex items-center space-x-2 text-gray-400">
+                <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                <span>Checking signature status...</span>
               </div>
-              <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-blue-500/10 text-blue-500 text-sm">
-                <span>💎</span>
-                <span>Positivity Score: 9.2/10</span>
-              </div>
-            </div>
-
-            {/* Verification Progress */}
-            <div className="w-full max-w-2xl">
-              <Progress value={98.8} className="h-2 mb-2" />
-              <p className="text-sm text-muted-foreground text-center">
-                Verified by 247/250 EigenLayer operators
-              </p>
-            </div>
-
-            {/* Video Hash */}
-            <div className="w-full max-w-2xl bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-              <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Video Hash:</p>
-              <div className="bg-white dark:bg-gray-900 p-3 rounded-md font-mono text-sm overflow-x-auto">
-                {videoHash}
-              </div>
-            </div>
-
-            {/* Sign Video Button */}
-            <div className="w-full max-w-2xl space-y-4">
-              <Button
-                onClick={handleSignMessage}
-                disabled={isSigning || videoState.loading}
-                className="w-full py-6 text-base font-medium"
-                size="lg"
-              >
-                {isSigning ? (
-                  <>
-                    <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Signing...
-                  </>
-                ) : (
-                  'Sign Video with Wallet'
+            ) : isSigned ? (
+              <div className="space-y-3">
+                <div className="flex items-center text-green-400">
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span>This video is verified on the blockchain</span>
+                </div>
+                {signatureData && (
+                  <div className="mt-3 space-y-2 text-sm">
+                    <p><span className="text-gray-400">Signed by:</span> {signatureData.signer}</p>
+                    <p><span className="text-gray-400">Timestamp:</span> {new Date(signatureData.timestamp * 1000).toLocaleString()}</p>
+                    {txHash && (
+                      <p className="break-all">
+                        <span className="text-gray-400">Transaction:</span>{' '}
+                        <a 
+                          href={`https://etherscan.io/tx/${txHash}`} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-blue-400 hover:underline"
+                        >
+                          View on Etherscan
+                        </a>
+                      </p>
+                    )}
+                  </div>
                 )}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-yellow-400">This video is not yet verified on the blockchain</p>
+                <Button 
+                  onClick={handleSignMessage}
+                  disabled={isSigning || !isConnected}
+                  className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-6 py-3 rounded-lg font-medium transition-colors w-full"
+                >
+                  {isSigning ? (
+                    <span className="flex items-center justify-center">
+                      <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Signing...
+                    </span>
+                  ) : 'Sign & Verify on Blockchain'}
+                </Button>
+                {!isConnected && (
+                  <p className="text-sm text-gray-400">Connect your wallet to verify this video on the blockchain</p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Video Hash */}
+          <div className="mt-6 p-4 bg-gray-800/50 rounded-lg border border-gray-700">
+            <h3 className="text-sm font-medium text-gray-400 mb-2">Video Hash</h3>
+            <p className="font-mono text-sm text-gray-300 break-all">{videoHash}</p>
+            
+            {isSigned && signatureData?.signature && (
+              <div className="mt-3 pt-3 border-t border-gray-700">
+                <h3 className="text-sm font-medium text-gray-400 mb-2">Signature</h3>
+                <p className="font-mono text-xs text-gray-400 break-all">{signatureData.signature}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Navigation */}
+          <div className="mt-8 pt-6 border-t border-gray-700 w-full flex flex-col sm:flex-row gap-4 justify-between items-center">
+            <div className="flex gap-4 w-full sm:w-auto">
+              <Button
+                variant="outline"
+                onClick={() => router.back()}
+                className="text-gray-300 hover:text-white border-gray-600 hover:border-white w-full sm:w-auto"
+              >
+                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+                Go Back
               </Button>
-
-              {/* Wallet Connection Status */}
-              {!isConnected ? (
-                <div className="text-center">
-                  <p className="text-sm text-yellow-600 dark:text-yellow-400">
-                    Connect your wallet to sign this video
-                  </p>
-                </div>
-              ) : (
-                <div className="text-center">
-                  <p className="text-sm text-green-600 dark:text-green-400">
-                    Connected: {address?.substring(0, 6)}...{address?.substring(address.length - 4)}
-                  </p>
-                </div>
-              )}
+              
+              <Button
+                onClick={() => router.push('/')}
+                className="bg-gray-700 hover:bg-gray-600 text-white w-full sm:w-auto"
+              >
+                Back to Home
+              </Button>
             </div>
-          </>
-        )}
-
-        {/* Navigation */}
-        <div className="w-full max-w-2xl flex justify-between mt-8 pt-4 border-t border-gray-200 dark:border-gray-800">
-          <Link
-            href="/"
-            className="inline-flex items-center text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
-            Back to Home
-          </Link>
-          
-          <Link
-            href="/upload"
-            className="inline-flex items-center text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
-          >
-            Create Another
-            <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-            </svg>
-          </Link>
+            
+            <Link 
+              href="/upload" 
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors w-full sm:w-auto"
+            >
+              Create Another
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+              </svg>
+            </Link>
+          </div>
         </div>
-      </main>
+      </div>
     </div>
   );
 }
