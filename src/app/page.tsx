@@ -8,6 +8,8 @@ import Link from "next/link";
 import { IDKitWidget, VerificationLevel, ISuccessResult } from '@worldcoin/idkit';
 import SplineCanvas from '@/components/SplineCanvas';
 import { Button } from "@/components/ui/button";
+import { BadgeCheck } from 'lucide-react';
+import { StyledText } from '@/components/StyledText';
 
 export default function Home() {
   const [isResetting, setIsResetting] = useState(true);
@@ -132,9 +134,9 @@ export default function Home() {
           <h1 className="text-5xl font-semibold tracking-tight md:text-7xl">
             Silver Lining
           </h1>
-          <p className="md:text-balance text-muted-foreground md:text-xl">
-            you own your content
-          </p>
+          <div className="mt-4">
+            <StyledText>you own your content</StyledText>
+          </div>
         </div>
         <div className="flex items-center gap-3.5">
 
@@ -149,8 +151,9 @@ export default function Home() {
               {({ open }) => (
                 <Button 
                   onClick={open}
-                  className="rounded-xl"
+                  className="rounded-xl gap-2"
                 >
+                  <BadgeCheck className="h-4 w-4" />
                   Verify with World ID
                 </Button>
               )}
