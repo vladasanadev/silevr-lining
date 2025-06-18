@@ -5,7 +5,10 @@ import { useRouter } from 'next/navigation';
 import { ConnectWalletButton } from "@/components/simplekit";
 import { ThemeToggle } from "./theme-toggle";
 import Link from "next/link";
-import { IDKitWidget, VerificationLevel, ISuccessResult } from '@worldcoin/idkit'
+import { IDKitWidget, VerificationLevel, ISuccessResult } from '@worldcoin/idkit';
+import SplineCanvas from '@/components/SplineCanvas';
+import { Button } from "@/components/ui/button";
+
 export default function Home() {
   const [isResetting, setIsResetting] = useState(true);
   const { isConnected, address } = useAccount();
@@ -111,34 +114,47 @@ export default function Home() {
   };
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center p-3.5">
+    <div className="relative w-full min-h-screen overflow-hidden bg-black">
+      {/* Spline Background - Full Viewport */}
+      <div className="fixed inset-0 w-full h-full z-0">
+        <SplineCanvas 
+          splineUrl="https://prod.spline.design/XV8wjbIwMthxrmpw/scene.splinecode"
+          className="w-full h-full"
+          onLoaded={() => console.log('Spline scene loaded')}
+        />
+        <div className="absolute inset-0 bg-black/30" />
+      </div>
+      
+      {/* Main Content */}
+      <div className="relative z-10 flex min-h-screen flex-col items-center justify-center p-3.5">
       <main className="flex flex-col items-center gap-y-9">
         <div className="max-w-lg space-y-3.5 text-center">
           <h1 className="text-5xl font-semibold tracking-tight md:text-7xl">
             Silver Lining
           </h1>
           <p className="md:text-balance text-muted-foreground md:text-xl">
-            a platform for creators TikTok meets Verifiable AI
+            you own your content
           </p>
         </div>
         <div className="flex items-center gap-3.5">
-          <ThemeToggle />
+
           <div className="flex items-center gap-3.5">
             <ConnectWalletButton />
             <IDKitWidget
-    app_id="app_staging_781083c0ffb00f545b52ebff3a8fcbf8"
-    action="login-with-silver-lining"
-    verification_level={VerificationLevel.Device}
-    handleVerify={verifyProof}
-    onSuccess={onIDKitSuccess}>
-    {({ open }) => (
-      <button
-        onClick={open}
-      >
-        Verify with World ID
-      </button>
-    )}
-</IDKitWidget>
+              app_id="app_staging_781083c0ffb00f545b52ebff3a8fcbf8"
+              action="login-with-silver-lining"
+              verification_level={VerificationLevel.Device}
+              handleVerify={verifyProof}
+              onSuccess={onIDKitSuccess}>
+              {({ open }) => (
+                <Button 
+                  onClick={open}
+                  className="rounded-xl"
+                >
+                  Verify with World ID
+                </Button>
+              )}
+            </IDKitWidget>
           </div>
           <Link href="https://github.com/vaunblu/SimpleKit" target="_blank">
             {/* <Button variant="ghost" className="rounded-xl">
@@ -150,6 +166,7 @@ export default function Home() {
 
       <footer className="absolute bottom-3.5 mx-auto flex items-center gap-[0.5ch] text-center text-muted-foreground">
       </footer>
+      </div>
     </div>
   );
 }
