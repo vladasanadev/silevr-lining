@@ -59,7 +59,7 @@ export default function UploadForm() {
       { progress: 40, status: 'Analyzing content...', delay: 1000 },
       { progress: 60, status: 'Generating video frames...', delay: 1500 },
       { progress: 80, status: 'Adding final touches...', delay: 1200 },
-      { progress: 95, status: 'Almost done...', delay: 800 },
+      { progress: 95, status: 'Almost done...', delay: 3800 }, // Increased delay to make total ~10s
     ];
     
     try {
@@ -73,10 +73,11 @@ export default function UploadForm() {
       // Final completion
       setStatus('Video generated successfully!');
       setUploadProgress(100);
-      await new Promise(resolve => setTimeout(resolve, 500));
       
-      // Redirect to result page with the title as a query parameter
-      router.push(`/result?title=${encodeURIComponent(title)}`);
+      // Redirect to preview page with the title as a query parameter
+      // Using a mock video URL for demonstration
+      const mockVideoUrl = 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4';
+      router.push(`/preview?title=${encodeURIComponent(title)}&videoUrl=${encodeURIComponent(mockVideoUrl)}`);
       
     } catch (error) {
       console.error('Error in video generation process:', error);
@@ -87,7 +88,6 @@ export default function UploadForm() {
       // Auto-clear error after 5 seconds
       setTimeout(() => {
         setStatus('');
-        setIsUploading(false);
       }, 5000);
     } finally {
       setIsUploading(false);
@@ -114,7 +114,7 @@ export default function UploadForm() {
             Create AI Video
           </h1>
           <p className="text-gray-400 max-w-md mx-auto">
-            Upload an image and describe your vision. We'll turn it into an amazing video.
+            Upload an image and describe your vision. We'll turn it into a Silver Lining video.
           </p>
         </div>
 
@@ -141,11 +141,16 @@ export default function UploadForm() {
             </label>
             {file ? (
               <div className="relative group">
-                <div className="relative aspect-video bg-gray-900/50 rounded-xl overflow-hidden border-2 border-gray-800 group-hover:border-purple-500/30 transition-all duration-300">
+                <div className="relative bg-gray-900/50 rounded-xl overflow-hidden border-2 border-gray-800 group-hover:border-purple-500/30 transition-all duration-300 flex items-center justify-center" style={{ minHeight: '200px', maxHeight: '400px' }}>
                   <img
                     src={file.preview}
                     alt="Preview"
-                    className="w-full h-full object-cover"
+                    className="max-w-full max-h-full object-contain p-2"
+                    onLoad={(e) => {
+                      // Optional: Add any additional logic when image loads
+                      const img = e.target as HTMLImageElement;
+                      console.log('Image loaded:', img.naturalWidth, 'x', img.naturalHeight);
+                    }}
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-4">
                     <button
