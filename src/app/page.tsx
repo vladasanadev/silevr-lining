@@ -4,11 +4,8 @@ import { useAccount, useDisconnect } from 'wagmi';
 import { useRouter } from 'next/navigation';
 import { ConnectWalletButton } from "@/components/simplekit";
 import { ThemeToggle } from "./theme-toggle";
-import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { ArrowUpRight } from "lucide-react";
-import Image from "next/image";
-
+import { IDKitWidget, VerificationLevel, ISuccessResult } from '@worldcoin/idkit'
 export default function Home() {
   const [isResetting, setIsResetting] = useState(true);
   const { isConnected, address } = useAccount();
@@ -72,6 +69,47 @@ export default function Home() {
     }
   }, [isConnected, isResetting, router]);
 
+  const verifyProof = async (proof: ISuccessResult) => {
+    console.log('Proof received from IDKit, sending to backend for verification:', proof);
+    try {
+      const response = await fetch('/api/verify', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(proof), // Send the entire proof object from IDKit
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        if (data.verified) {
+          console.log('Proof successfully verified by the backend!');
+          // TODO: Implement next steps after successful backend verification
+          // e.g., redirect to a protected page, update UI state
+          alert("Verification Successful!");
+          // onSuccess(); // You can call your existing onSuccess or a new function
+        } else {
+          console.warn('Proof verification failed by the backend:', data.error || 'Unknown reason');
+          alert(`Verification Failed: ${data.error || 'The proof could not be verified by the server.'}`);
+        }
+      } else {
+        console.error('Error calling verification API:', data.error || response.statusText);
+        alert(`API Error: ${data.error || 'Failed to contact verification server.'}`);
+      }
+    } catch (error) {
+      console.error('Network or other error in verifyProof:', error);
+      alert(`An unexpected error occurred: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  // This onSuccess is for the IDKitWidget itself, when it successfully generates a proof.
+  // The actual backend verification result is handled within verifyProof.
+  const onIDKitSuccess = (result: ISuccessResult) => {
+    console.log("IDKitWidget successfully generated a proof:", result);
+    // The handleVerify (verifyProof) function will be called with this result automatically.
+  };
+
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center p-3.5">
       <main className="flex flex-col items-center gap-y-9">
@@ -87,13 +125,20 @@ export default function Home() {
           <ThemeToggle />
           <div className="flex items-center gap-3.5">
             <ConnectWalletButton />
-            <Button 
-              variant="outline" 
-              className="rounded-xl border-2 border-blue-600 text-blue-600 hover:bg-blue-600/10 hover:text-blue-600 transition-colors px-6 h-11 text-base font-medium"
-              onClick={() => {}}
-            >
-              Verify Identity
-            </Button>
+            <IDKitWidget
+    app_id="app_staging_781083c0ffb00f545b52ebff3a8fcbf8"
+    action="login-with-silver-lining"
+    verification_level={VerificationLevel.Device}
+    handleVerify={verifyProof}
+    onSuccess={onIDKitSuccess}>
+    {({ open }) => (
+      <button
+        onClick={open}
+      >
+        Verify with World ID
+      </button>
+    )}
+</IDKitWidget>
           </div>
           <Link href="https://github.com/vaunblu/SimpleKit" target="_blank">
             {/* <Button variant="ghost" className="rounded-xl">

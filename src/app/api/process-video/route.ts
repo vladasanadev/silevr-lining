@@ -6,6 +6,9 @@ import { addSignatureToVideo } from '@/lib/videoMetadata';
 
 export const dynamic = 'force-dynamic'; // Ensures the route is server-side only
 
+
+
+
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
